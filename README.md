@@ -1,1 +1,1 @@
-# kudet projesi
+# kudet project
