@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kudet"
+version = "0.0.1"
+authors = [
+    { name="Binnur Söztutar", email="binnur.capkan@outlook.com" }
+]
+description = "A simple package for basic math operations."
+readme = "README.md"
+requires-python = ">=3.7"
+keywords = ["math", "addition", "subtraction"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "hhttps://github.com/kudetx/kudet.git"
