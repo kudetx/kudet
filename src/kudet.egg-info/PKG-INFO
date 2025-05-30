@@ -1,0 +1,17 @@
+Metadata-Version: 2.1
+Name: kudet
+Version: 0.0.1
+Summary: A simple package for basic math operations.
+Author-email: Binnur Söztutar <binnur.capkan@outlook.com>
+Project-URL: Homepage, https://github.com/kudetx/kudet.git
+Keywords: math,addition,subtraction
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown
+License-File: LICENSE
+
+# kudet project

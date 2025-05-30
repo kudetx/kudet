@@ -21,4 +21,4 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "hhttps://github.com/kudetx/kudet.git"
+Homepage = "https://github.com/kudetx/kudet.git"

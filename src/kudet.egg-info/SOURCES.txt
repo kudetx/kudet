@@ -1,0 +1,10 @@
+LICENSE
+README.md
+pyproject.toml
+src/kudet/__init__.py
+src/kudet/math_operations.py
+src/kudet.egg-info/PKG-INFO
+src/kudet.egg-info/SOURCES.txt
+src/kudet.egg-info/dependency_links.txt
+src/kudet.egg-info/top_level.txt
+tests/test_fonksiyonlar.py
