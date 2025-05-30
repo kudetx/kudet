@@ -98,8 +98,15 @@ def prepare_property(df, fundamentals):
     """
     if df is None or df.empty:
         raise ValueError("None Dataset. Please enter valid symbol or check your connection")
+
     if not pd.api.types.is_numeric_dtype(df['Close']):
-        df['Close'] = pd.to_numeric(df['Close'], errors= 'coerce')
+        df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
+
+    # 🛡️ Güvenlik: Temel veriler boş veya eksik mi?
+    if not fundamentals or not isinstance(fundamentals, dict):
+        raise ValueError("Temel analiz verisi eksik veya sözlük değil.")
+    if any(v is None for v in fundamentals.values()):
+        raise ValueError(f"Temel analiz verilerinde eksik (None) değer var: {fundamentals}")
 
     # Step 1: Add all technical indicators
     df = add_indicators(df, fundamentals)
@@ -117,10 +124,17 @@ def prepare_property(df, fundamentals):
 
     # Step 4: Scale target column ('Close') separately for inverse transform later
     scaler_y = MinMaxScaler()
-    _ = scaler_y.fit_transform(df[['Close']])  # Fit only (used in inverse transform later)
+    scaler_y.fit(df[['Close']])  # Yalnızca fit yapılır; transform sonucu kullanılmıyor
 
     # Step 5: Normalize fundamental data
-    fundamental_vec = np.array([list(fundamentals.values())])
+    try:
+        fundamental_vec = np.array([list(fundamentals.values())], dtype=float)
+    except Exception as e:
+        raise ValueError(f"Temel veriler sayıya çevrilemedi: {e}")
+
+    if fundamental_vec.shape[1] != 6:
+        raise ValueError(f"Beklenen 6 temel oran eksik ya da yanlış: {fundamentals}")
+
     fund_scaler = MinMaxScaler()
     fundamental_scaled = fund_scaler.fit_transform(fundamental_vec)[0].reshape(1, -1)
 

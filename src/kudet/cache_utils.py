@@ -90,11 +90,11 @@ def safe_download(symbol, period='1y', interval='1d', max_retries=3):
                 print("Veri boş döndü.")
         except Exception as e:
             if 'rate limit' in str(e).lower() or 'too many requests' in str(e).lower():
-                wait = 5 * attempt
+                wait = 10 * attempt
                 print(f"Rate limit'e takıldı, {wait} saniye bekleniyor...")
                 time.sleep(wait)
             else:
                 print(f"Veri çekme hatası: {e}")
-        time.sleep(3)  # Her deneme arası küçük bekleme
+        time.sleep(8)  # Her deneme arası küçük bekleme
     print("Veri indirilemedi, maksimum deneme hakkı aşıldı.")
     return None

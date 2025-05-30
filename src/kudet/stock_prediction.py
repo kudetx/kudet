@@ -5,7 +5,6 @@ import sys
 import math
 import time
 import unicodedata
-
 # ───── Üçüncü Parti Kütüphaneler ─────
 import numpy as np
 import pandas as pd
@@ -104,11 +103,20 @@ def main():
                     data = safe_download(symbol, period='1y', interval='1d')
 
                     if data is None or data.empty:
-                        print("Veri bulunamadı veya hatalı kod. Lütfen geçerli bir BIST kodu girin.")
+                        print("⚠️ Veri çekilemedi. Bu bir geçici bağlantı sorunu olabilir. "
+                              "Lütfen biraz bekleyip tekrar deneyin.\n"
+                              "Eğer bu hisse kodunun doğru olduğunu biliyorsanız, büyük ihtimalle geçici olarak API engeli uygulanmıştır.")
                         continue
-                    data = data.astype(float)
+
+                    try:
+                        data = data.astype(float)
+                    except Exception as e:
+                        print(f"Veri türü dönüştürülürken hata oluştu: {e}")
+                        continue
+
                     save_to_cache(symbol, data, period='1y')
                     print(f"✅ {symbol} yüklendi ve cache'e kaydedildi.")
+
                 except Exception as e:
                     print(f"Veri çekme hatası: {e}")
                     continue
@@ -137,15 +145,24 @@ def main():
                 epochs=epochs
             )
 
-            # Tahmin için verileri hazırla
+            # 1. Giriş verileri hazırlanıyor
             latest_input = processed[-size:].values
-            X_input = latest_input.reshape((1, size, latest_input.shape[1]))
-            found_input = np.tile(fundamental_scaled, (1, size, 1))
+            X_input = latest_input.reshape((1, size, latest_input.shape[1])).astype('float32')
+
+            # 2. Temel veriler float32 olarak garantileniyor
+            fundamental_scaled = np.array(fundamental_scaled, dtype='float32')
+            found_input = np.tile(fundamental_scaled, (1, size, 1)).astype('float32')
+
+            # 3. Birleştirme
             X_input_combined = np.concatenate([X_input, found_input], axis=2)
 
             # Tahmin yap
-            pred_scaled = model.predict(X_input_combined)[0]
-            predicted_prices = scaler_y.inverse_transform(pred_scaled.reshape(-1, 1)).flatten()
+            pred_scaled = model.predict(X_input_combined)
+            if pred_scaled is None or len(pred_scaled) == 0:
+                raise ValueError("Tahmin başarısız oldu, model çıktı döndürmedi.")
+
+            predicted_prices = scaler_y.inverse_transform(np.array(pred_scaled).reshape(-1, 1)).flatten()
+
             real_scaled = y_test[-1]
             real_prices = scaler_y.inverse_transform(real_scaled.reshape(-1, 1)).flatten()
 
@@ -160,10 +177,29 @@ def main():
             rmse = math.sqrt(mse)
             r2 = r2_score(real_prices, predicted_prices)
 
-            print("\nModel Performansı:")
-            print(f'R² skoru: {r2:.4f}')
-            print(f'MSE: {mse:.4f}')
-            print(f'RMSE: {rmse:.4f}')
+            # Sapma yüzdesi ortalaması
+            sapmalar = [(abs(p - r) / r) * 100 for p, r in zip(predicted_prices, real_prices)]
+            ortalama_sapma = np.mean(sapmalar)
+
+            print("\n📊 Model Performansı:")
+            print(
+                f"🔹 R² skoru       : {r2:.4f}  → {'Harika' if r2 > 0.9 else 'İyi' if r2 > 0.7 else 'Zayıf' if r2 > 0.3 else 'Yetersiz'}")
+            print(f"🔹 Ortalama Hata  : {rmse:.2f} TL")
+            print(f"🔹 Hata Kare Ort. : {mse:.2f}")
+            print(f"🔹 Ortalama Sapma : %{ortalama_sapma:.2f} → ", end="")
+            if ortalama_sapma < 10:
+                print("🎯 Mükemmel tahmin!")
+            elif ortalama_sapma < 20:
+                print("✅ Başarılı tahmin.")
+            elif ortalama_sapma < 50:
+                print("⚠️ Geliştirilebilir.")
+            else:
+                print("❌ Güvenilmez tahmin.")
+
+            print("\nℹ️ Açıklama:")
+            print("R² skoru 1'e ne kadar yakınsa, modelin tahmin gücü o kadar yüksek demektir.")
+            print("Ortalama sapma ise tahminin, gerçek değerden ortalama ne kadar saptığını gösterir.")
+            print("Hedefimiz: Ortalama sapma <%15 ve R² > 0.7 olmalı.")
 
             # Grafik çiz
             plt.figure(figsize=(12, 6))
