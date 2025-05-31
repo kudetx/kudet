@@ -16,9 +16,10 @@ from tensorflow.keras.layers import Dropout  # <-- Dropout eklendi
 
 # ───── Yerel Modüller (Senin dosyaların) ─────
 from indicators import add_indicators, prepare_property
-from lstm_lstm import train_lstm_lstm
+from lstm_lstm import train_multi_input_model
 from cache_utils import load_cached_data, save_to_cache, rate_limit_sleep, \
                          load_fundamentals_from_cache, save_fundamentals_to_cache, safe_download
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 def format_symbol(symbol):
     """
@@ -128,16 +129,16 @@ def main():
             fundamentals_vec = np.array([list(fundamentals.values())])
 
             # LSTM parametreleri
-            size = 30
-            forecast = 3
-            epochs = 50
+            size = 45
+            forecast = 20
+            epochs = 60
             print(f"\n{symbol} için model eğitiliyor...\n")
 
             # Teknik göstergeler (MA, RSI, Momentum, MACD, Bollinger vb.) + temel oranlar içeren verileri hazırla
             processed, fundamental_scaled, scaler_y = prepare_property(data.copy(), fundamentals)
 
             # LSTM modelini eğit
-            model, X_test, y_test = train_lstm_lstm(
+            model, X_test_input, y_test = train_multi_input_model(
                 processed,
                 fundamental_scaled,
                 size=size,
@@ -151,13 +152,11 @@ def main():
 
             # 2. Temel veriler float32 olarak garantileniyor
             fundamental_scaled = np.array(fundamental_scaled, dtype='float32')
-            found_input = np.tile(fundamental_scaled, (1, size, 1)).astype('float32')
-
-            # 3. Birleştirme
-            X_input_combined = np.concatenate([X_input, found_input], axis=2)
 
             # Tahmin yap
-            pred_scaled = model.predict(X_input_combined)
+            # Not: X_input ve fundamental_scaled ayrı verilecek
+            pred_scaled = model.predict([X_input, fundamental_scaled])
+
             if pred_scaled is None or len(pred_scaled) == 0:
                 raise ValueError("Tahmin başarısız oldu, model çıktı döndürmedi.")
 
@@ -173,19 +172,26 @@ def main():
                 print(f"+{i + 1} gün: Tahmin= {p:.2f} TL | Gerçek= {real_prices[i]:.2f} TL | Fark= {fark:.2f}%")
 
             # Model performansını hesapla
-            mse = mean_squared_error(real_prices, predicted_prices)
-            rmse = math.sqrt(mse)
+            rmse = np.sqrt(mean_squared_error(real_prices, predicted_prices))
+            mae = mean_absolute_error(real_prices, predicted_prices)
+            mape = np.mean(np.abs((real_prices - predicted_prices) / real_prices)) * 100
             r2 = r2_score(real_prices, predicted_prices)
-
-            # Sapma yüzdesi ortalaması
-            sapmalar = [(abs(p - r) / r) * 100 for p, r in zip(predicted_prices, real_prices)]
-            ortalama_sapma = np.mean(sapmalar)
+            ortalama_sapma = np.mean([(abs(p - r) / r) * 100 for p, r in zip(predicted_prices, real_prices)])
 
             print("\n📊 Model Performansı:")
-            print(
-                f"🔹 R² skoru       : {r2:.4f}  → {'Harika' if r2 > 0.9 else 'İyi' if r2 > 0.7 else 'Zayıf' if r2 > 0.3 else 'Yetersiz'}")
-            print(f"🔹 Ortalama Hata  : {rmse:.2f} TL")
-            print(f"🔹 Hata Kare Ort. : {mse:.2f}")
+            print(f"🔹 R² skoru       : {r2:.4f}  → ", end="")
+            if r2 > 0.9:
+                print("Harika")
+            elif r2 > 0.7:
+                print("İyi")
+            elif r2 > 0.3:
+                print("Zayıf")
+            else:
+                print("Yetersiz")
+
+            print(f"🔹 RMSE           : {rmse:.2f} TL")
+            print(f"🔹 MAE            : {mae:.2f} TL")
+            print(f"🔹 MAPE           : %{mape:.2f}")
             print(f"🔹 Ortalama Sapma : %{ortalama_sapma:.2f} → ", end="")
             if ortalama_sapma < 10:
                 print("🎯 Mükemmel tahmin!")
@@ -200,7 +206,6 @@ def main():
             print("R² skoru 1'e ne kadar yakınsa, modelin tahmin gücü o kadar yüksek demektir.")
             print("Ortalama sapma ise tahminin, gerçek değerden ortalama ne kadar saptığını gösterir.")
             print("Hedefimiz: Ortalama sapma <%15 ve R² > 0.7 olmalı.")
-
             # Grafik çiz
             plt.figure(figsize=(12, 6))
             plt.plot(range(1, forecast + 1), predicted_prices,
@@ -235,3 +240,5 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Program hatası: {e}")
         sys.exit(1)
+
+

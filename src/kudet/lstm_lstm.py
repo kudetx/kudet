@@ -1,9 +1,11 @@
 import numpy as np
 import pandas as pd
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, Concatenate
 from sklearn.preprocessing import MinMaxScaler
-from tensorflow.keras.callbacks import EarlyStopping  # <-- EN ÜSTE EKLE
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.models import Model
+
 
 def create_dataset(data, size, forecast):
     """
@@ -22,7 +24,7 @@ def create_dataset(data, size, forecast):
         y.append(data[i+ size:i + size+ forecast, 0 ])
     return np.array(X), np.array(y)
 
-def train_lstm_lstm(df, fundamentals_vec_scaled, size=30, forecast=3, epochs=50):
+def train_multi_input_model(df, fundamentals_vec_scaled, size=45, forecast=20, epochs=60):
     """
     Builds and trains a stacked LSTM model using technical and fundamental features.
     Uses all columns from the input DataFrame `df` (including Close, Volume, MA5, MA20, RSI, Momentum, Bollinger Bands, MACD).
@@ -40,38 +42,59 @@ def train_lstm_lstm(df, fundamentals_vec_scaled, size=30, forecast=3, epochs=50)
             - np.ndarray: Test input features.
             - np.ndarray: Test target values.
     """
+
     scaler = MinMaxScaler()
     scaled_data = scaler.fit_transform(df.values)
-#Create input, output sequences
-    X,y = create_dataset(scaled_data, size, forecast)
-    if len(X) == 0 or len(y) ==0:
-        raise ValueError("Eğitim için yeterli veri yok, daha kısa bir forecast değeri belirleyin ya da başka bir hisse kodu giriniz...")
-#Repeat fundamental ector to match LSTM input shape
-    fund_array = np.tile(fundamentals_vec_scaled, (X.shape[0], X.shape[1], 1))
-    X_combined = np.concatenate([X, fund_array], axis=2)
-#Split into train and test sets
-    split = int(len(X) * 0.8)
-    X_train, X_test = X_combined[:split], X_combined[split:]
-    y_train, y_test = y[:split], y[split:]
 
-#build the LSTM model
-    model = Sequential()
-    model.add(LSTM(64, return_sequences=True,
-                   input_shape = (X_combined.shape[1], X_combined.shape[2])))
-    model.add(Dropout(0.2))  #%20 dropout
-    model.add(LSTM(32))
-    model.add(Dropout(0.2))  #2. dropout
-    model.add(Dense(forecast))
+    X, y = create_dataset(scaled_data, size, forecast)
+
+    if len(X) == 0 or len(y) == 0:
+        raise ValueError("Eğitim için yeterli veri yok.")
+
+    # Teknik veri input
+    input_teknik = Input(shape=(X.shape[1], X.shape[2]))
+    x = LSTM(64, return_sequences=True)(input_teknik)
+    x = Dropout(0.2)(x)
+    x = LSTM(32)(x)
+    x = Dropout(0.2)(x)
+
+    # Temel veri input
+    input_temel = Input(shape=(fundamentals_vec_scaled.shape[1],))
+    f = Dense(32, activation='relu')(input_temel)
+    f = Dropout(0.1)(f)
+
+    # Birleştirme ve çıkış
+    combined = Concatenate()([x, f])
+    output = Dense(forecast)(combined)
+
+    model = Model(inputs=[input_teknik, input_temel], outputs=output)
     model.compile(optimizer='adam', loss='mse')
 
-    # EarlyStopping callback’i tanımla
-    early_stop = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+    # Temel verileri tekrar et
+    fund_array = np.repeat(fundamentals_vec_scaled, X.shape[0], axis=0)
 
-    #train the model
-    model.fit(X_train, y_train,
-              epochs=epochs,
-              batch_size=32,
-              verbose=1,
-              validation_split=0.2,  # Eğitim verilerinin %20'si doğrulama için
-              callbacks = [early_stop])
-    return model, X_test, y_test
+    # Eğitim / test ayır
+    split = int(len(X) * 0.8)
+    X_train, X_test = X[:split], X[split:]
+    f_train, f_test = fund_array[:split], fund_array[split:]
+    y_train, y_test = y[:split], y[split:]
+
+    # Erken durdurma: val_loss 5 epoch boyunca iyileşmezse durur ve en iyi ağırlıkları geri yükler
+    early_stop = EarlyStopping(
+        monitor='val_loss',
+        patience=5,
+        restore_best_weights=True
+    )
+
+    # Modeli eğit
+    model.fit(
+        [X_train, f_train], y_train,
+        epochs=epochs,
+        batch_size=32,
+        validation_split=0.2,
+        callbacks=[early_stop],  # <-- erken durdurma eklendi
+        verbose=1
+    )
+
+    # Eğitilmiş modeli ve test verilerini döndür
+    return model, [X_test, f_test], y_test

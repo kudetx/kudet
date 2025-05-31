@@ -4,12 +4,14 @@ import pytest
 import numpy as np
 import pandas as pd
 
-# src/kudet içindeki modülleri içe alabilmek için path ayarı
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', 'kudet')))
+# src/kudet içindeki modülleri içe alabilmek için PYTHONPATH ayarı
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', 'kudet')))
 
+# Yerel modülleri içe aktar
 from indicators import calculate_rsi, add_indicators, prepare_property
 from lstm_lstm import train_lstm_lstm
 from cache_utils import save_to_cache, load_cached_data, backup_corrupted_file
+from stock_prediction import format_symbol
 
 # ─────────────── RSI ve Göstergeler ───────────────
 
@@ -75,7 +77,7 @@ def test_lstm_training_minimal_input():
     model, X_test, y_test = train_lstm_lstm(processed, f_vec, size=10, forecast=2, epochs=1)
     assert X_test.shape[0] > 0 and y_test.shape[0] > 0
 
-# ─────────────── Cache Testi (Bozuk dosya vs) ───────────────
+# ─────────────── Cache Testi ───────────────
 
 def test_cache_save_and_load(tmp_path):
     symbol = "TEST.IS"
@@ -85,8 +87,7 @@ def test_cache_save_and_load(tmp_path):
     })
     df.set_index('Date', inplace=True)
 
-    # geçici klasörde cache test et
-    orig_folder = os.getcwd()
+    orig_dir = os.getcwd()
     os.chdir(tmp_path)
 
     try:
@@ -96,7 +97,7 @@ def test_cache_save_and_load(tmp_path):
         assert 'Close' in loaded_df.columns
         assert len(loaded_df) == 5
     finally:
-        os.chdir(orig_folder)
+        os.chdir(orig_dir)
 
 # ─────────────── Edge Case: Empty RSI ───────────────
 
@@ -104,3 +105,36 @@ def test_rsi_with_empty_series():
     empty = pd.Series([], dtype=float)
     rsi = calculate_rsi(empty)
     assert rsi.empty
+
+# ─────────────── Cache Bozulduğunda Otomatik Silme ───────────────
+
+def test_cache_auto_remove_on_error(tmp_path):
+    symbol = "TESTERROR.IS"
+    fake_cache_file = tmp_path / f"{symbol}_1y.csv"
+
+    with open(fake_cache_file, 'w') as f:
+        f.write("bozuk,veri")
+
+    os.chdir(tmp_path)
+    try:
+        result = load_cached_data(symbol)
+        assert result is None or result.empty
+    finally:
+        os.chdir(os.path.abspath(os.path.join(tmp_path, '..')))
+
+# ─────────────── Entegrasyon Testi ───────────────
+def test_main_integration_end_to_end():
+    symbol = format_symbol("VESTL")
+    data = load_cached_data(symbol)
+    if data is None:
+        pytest.skip("Cache verisi bulunamadı: VESTL.IS")
+
+    fundamentals = {
+        'pe_ratio': 10, 'pb_ratio': 2, 'net_income': 500000,
+        'market_cap': 1e8, 'shares_outstanding': 5e6, 'total_cash': 1e7
+    }
+
+    processed, f_vec, scaler_y = prepare_property(data.copy(), fundamentals)
+    model, X_test, y_test = train_lstm_lstm(processed, f_vec, size=20, forecast=5, epochs=1)
+    y_pred = model.predict(X_test)
+    assert y_pred is not None and len(y_pred) > 0
